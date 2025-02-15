@@ -1,5 +1,6 @@
-C:\Users\eldho\source\repos\SQL Export Import\bin\Debug\SQL Export Import.exe
 C:\Users\eldho\source\repos\SQL Export Import\bin\Debug\SQL Export Import.exe.config
+C:\Users\eldho\source\repos\SQL Export Import\bin\Debug\SQL Export Import.exe
+C:\Users\eldho\source\repos\SQL Export Import\bin\Debug\SQL Export Import.pdb
 C:\Users\eldho\source\repos\SQL Export Import\bin\Debug\Azure.Core.dll
 C:\Users\eldho\source\repos\SQL Export Import\bin\Debug\Azure.Identity.dll
 C:\Users\eldho\source\repos\SQL Export Import\bin\Debug\CsvHelper.dll
@@ -95,11 +96,10 @@ C:\Users\eldho\source\repos\SQL Export Import\obj\Debug\SQL Export Import.csproj
 C:\Users\eldho\source\repos\SQL Export Import\obj\Debug\SQL Export Import.csproj.SuggestedBindingRedirects.cache
 C:\Users\eldho\source\repos\SQL Export Import\obj\Debug\SQL Export Import.exe.config
 C:\Users\eldho\source\repos\SQL Export Import\obj\Debug\SQL_Export_Import.Form1.resources
+C:\Users\eldho\source\repos\SQL Export Import\obj\Debug\SQL_Export_Import.ImportSummaryForm.resources
 C:\Users\eldho\source\repos\SQL Export Import\obj\Debug\SQL_Export_Import.Properties.Resources.resources
 C:\Users\eldho\source\repos\SQL Export Import\obj\Debug\SQL Export Import.csproj.GenerateResource.cache
 C:\Users\eldho\source\repos\SQL Export Import\obj\Debug\SQL Export Import.csproj.CoreCompileInputs.cache
 C:\Users\eldho\source\repos\SQL Export Import\obj\Debug\SQL Expo.74BD8E81.Up2Date
 C:\Users\eldho\source\repos\SQL Export Import\obj\Debug\SQL Export Import.exe
 C:\Users\eldho\source\repos\SQL Export Import\obj\Debug\SQL Export Import.pdb
-C:\Users\eldho\source\repos\SQL Export Import\bin\Debug\SQL Export Import.pdb
-C:\Users\eldho\source\repos\SQL Export Import\obj\Debug\SQL_Export_Import.ImportSummaryForm.resources

@@ -1,17 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Data;
-using System.Drawing;
+using System.Data.SqlClient;
+using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Forms;
-using System.IO;
-using System.Data.SqlClient;
 using CsvHelper;
 using CsvHelper.Configuration;
-using CsvHelper.Configuration.Attributes;
 
 namespace SQL_Export_Import
 {
@@ -24,10 +21,9 @@ namespace SQL_Export_Import
 
         private void ImportSQLBtn_Click(object sender, EventArgs e)
         {
-            int newlyAdded = 0;
-            int updated = 0;
-            int noChange = 0;
+            int newlyAdded = 0, updated = 0, noChange = 0;
             List<DataRow> summaryData = new List<DataRow>();
+            StringBuilder logBuilder = new StringBuilder();
 
             using (OpenFileDialog ofd = new OpenFileDialog { Filter = "CSV files|*.csv", Title = "Select a CSV file" })
             {
@@ -35,25 +31,24 @@ namespace SQL_Export_Import
                 {
                     string csvFilePath = ofd.FileName;
                     DataTable dataTable = new DataTable();
+
                     using (var reader = new StreamReader(csvFilePath))
-                    using (var csv = new CsvReader(reader, new CsvConfiguration(System.Globalization.CultureInfo.InvariantCulture) { HasHeaderRecord = true }))
+                    using (var csv = new CsvReader(reader, new CsvConfiguration(CultureInfo.InvariantCulture) { HasHeaderRecord = true }))
+                    using (var dr = new CsvDataReader(csv))
                     {
-                        using (var dr = new CsvDataReader(csv))
-                        {
-                            dataTable.Load(dr);
-                        }
+                        dataTable.Load(dr);
                     }
 
-                    // Update this with your actual connection string.
                     string connectionString = "Server=localhost\\SQLEXPRESS;Database=FOSTER_DB;User Id=FOSTER;Password=Foster1;";
 
                     using (SqlConnection sqlConn = new SqlConnection(connectionString))
                     {
                         sqlConn.Open();
+                        int rowNumber = 1;
 
                         foreach (DataRow row in dataTable.Rows)
                         {
-                            string itemNum = row["ItemNum"].ToString();
+                            string itemNum = row["ItemNum"].ToString().Trim();
 
                             if (ItemExists(sqlConn, itemNum))
                             {
@@ -61,6 +56,14 @@ namespace SQL_Export_Import
                                 {
                                     updated++;
                                     summaryData.Add(CreateSummaryDataRow(row, "Updated"));
+                                    logBuilder.AppendLine($"Row {rowNumber} - ItemNum: {itemNum}, ItemName: {row["ItemName"]}, ItemName_Extra: {row["ItemName_Extra"]} UPDATED");
+
+
+
+                                    foreach (var diff in differences)
+                                    {
+                                        logBuilder.AppendLine($"  {diff.Key}: {diff.Value}");
+                                    }
                                 }
                                 else
                                 {
@@ -73,15 +76,82 @@ namespace SQL_Export_Import
                                 InsertItem(sqlConn, row);
                                 newlyAdded++;
                                 summaryData.Add(CreateSummaryDataRow(row, "Newly Added"));
+                                logBuilder.AppendLine($"Row {rowNumber} - ItemNum: {itemNum}, ItemName: {row["ItemName"]}, ItemName_Extra: {row["ItemName_Extra"]} ADDED");
+
                             }
+                            rowNumber++;
                         }
                     }
 
-                    MessageBox.Show("Data imported successfully!");
+                    string logDirectory = @"C:\\Users\\Public\\Documents\\DreamsLive\\Log";
+                    string logFilePath = Path.Combine(logDirectory, "UpdateLog.txt");
 
-                    // Show the summary window
+                    if (!Directory.Exists(logDirectory))
+                    {
+                        Directory.CreateDirectory(logDirectory);
+                    }
+
+                    File.WriteAllText(logFilePath, logBuilder.ToString());
+                    MessageBox.Show($"Log saved at: {logFilePath}");
+
                     ImportSummaryForm summaryForm = new ImportSummaryForm(newlyAdded, updated, noChange, summaryData);
                     summaryForm.ShowDialog();
+                }
+            }
+        }
+
+        private bool UpdateItem(SqlConnection sqlConn, DataRow newRow, out Dictionary<string, string> differences)
+        {
+            differences = new Dictionary<string, string>();
+
+            string selectQuery = "SELECT * FROM dbo.products WHERE ItemNum = @ItemNum";
+            using (SqlCommand selectCmd = new SqlCommand(selectQuery, sqlConn))
+            {
+                selectCmd.Parameters.AddWithValue("@ItemNum", newRow["ItemNum"].ToString().Trim());
+                SqlDataAdapter adapter = new SqlDataAdapter(selectCmd);
+                DataTable existingData = new DataTable();
+                adapter.Fill(existingData);
+
+                if (existingData.Rows.Count == 0)
+                    return false;
+
+                DataRow existingRow = existingData.Rows[0];
+                bool isDifferent = false;
+
+                foreach (DataColumn col in newRow.Table.Columns)
+                {
+                    string existingValue = existingRow[col.ColumnName]?.ToString().Trim() ?? "";
+                    string newValue = newRow[col.ColumnName]?.ToString().Trim() ?? "";
+
+                    if (decimal.TryParse(existingValue, out decimal oldNum) && decimal.TryParse(newValue, out decimal newNum))
+                    {
+                        if (Math.Abs(oldNum - newNum) > 0.0001M)
+                        {
+                            isDifferent = true;
+                            differences[col.ColumnName] = $"Old: {oldNum}, New: {newNum}";
+                        }
+                    }
+                    else if (!string.Equals(existingValue, newValue, StringComparison.OrdinalIgnoreCase))
+                    {
+                        isDifferent = true;
+                        differences[col.ColumnName] = $"Old: {existingValue}, New: {newValue}";
+                    }
+                }
+
+                if (!isDifferent)
+                    return false;
+
+                string updateQuery = "UPDATE dbo.products SET " +
+                    string.Join(", ", newRow.Table.Columns.Cast<DataColumn>().Select(c => $"{c.ColumnName} = @{c.ColumnName}")) +
+                    " WHERE ItemNum = @ItemNum";
+
+                using (SqlCommand cmd = new SqlCommand(updateQuery, sqlConn))
+                {
+                    foreach (DataColumn col in newRow.Table.Columns)
+                    {
+                        cmd.Parameters.AddWithValue($"@{col.ColumnName}", newRow[col] ?? DBNull.Value);
+                    }
+                    return cmd.ExecuteNonQuery() > 0;
                 }
             }
         }
@@ -92,142 +162,44 @@ namespace SQL_Export_Import
             using (SqlCommand cmd = new SqlCommand(query, sqlConn))
             {
                 cmd.Parameters.AddWithValue("@ItemNum", itemNum);
-                int count = (int)cmd.ExecuteScalar();
-                return count > 0;
+                return (int)cmd.ExecuteScalar() > 0;
             }
         }
 
-        private bool UpdateItem(SqlConnection sqlConn, DataRow newRow, out Dictionary<string, string> differences)
-        {
-            differences = new Dictionary<string, string>();
-
-            // Query to select existing data for comparison
-            string selectQuery = "SELECT * FROM dbo.products WHERE ItemNum = @ItemNum";
-            SqlCommand selectCmd = new SqlCommand(selectQuery, sqlConn);
-            selectCmd.Parameters.AddWithValue("@ItemNum", newRow["ItemNum"]);
-            SqlDataAdapter adapter = new SqlDataAdapter(selectCmd);
-            DataTable existingData = new DataTable();
-            adapter.Fill(existingData);
-
-            // Check if there are any differences
-            bool isDifferent = false;
-            if (existingData.Rows.Count > 0)
-            {
-                DataRow existingRow = existingData.Rows[0];
-                foreach (DataColumn col in newRow.Table.Columns)
-                {
-                    // Normalize data for comparison
-                    string existingValue = existingRow[col.ColumnName].ToString().Trim().ToLower();
-                    string newValue = newRow[col.ColumnName].ToString().Trim().ToLower();
-
-                    if (!existingValue.Equals(newValue))
-                    {
-                        isDifferent = true;
-                        differences[col.ColumnName] = $"Old: {existingRow[col.ColumnName]}, New: {newRow[col.ColumnName]}";
-                    }
-                }
-            }
-
-            // If no differences, return false to indicate no update
-            if (!isDifferent)
-            {
-                return false;
-            }
-
-            // Update query if differences found
-            string updateQuery = @"UPDATE dbo.products SET 
-                            ItemName = @ItemName,
-                            Price = @Price,
-                            NeverPrintInKitchen = @NeverPrintInKitchen,
-                            ItemName_Extra = @ItemName_Extra,
-                            Dept_ID = @Dept_ID,
-                            Cost = @Cost,
-                            Retail_Price = @Retail_Price,
-                            In_Stock = @In_Stock,
-                            Tax_1 = @Tax_1,
-                            Tax_2 = @Tax_2,
-                            Tax_3 = @Tax_3,
-                            Tax_4 = @Tax_4,
-                            Tax_5 = @Tax_5,
-                            Tax_6 = @Tax_6,
-                            Vendor_Number = @Vendor_Number,
-                            VendorName = @VendorName,
-                            Vendor_Part_Num = @Vendor_Part_Num,
-                            AltSku = @AltSku,
-                            Location = @Location,
-                            AutoWeigh = @AutoWeigh,
-                            FoodStampable = @FoodStampable,
-                            Check_ID = @Check_ID,
-                            Prompt_Price = @Prompt_Price,
-                            Prompt_Quantity = @Prompt_Quantity,
-                            Allow_BuyBack = @Allow_BuyBack,
-                            Unit_Type = @Unit_Type,
-                            Unit_Size = @Unit_Size,
-                            Prompt_Description = @Prompt_Description,
-                            Check_ID2 = @Check_ID2,
-                            Count_This_Item = @Count_This_Item,
-                            Print_On_Receipt = @Print_On_Receipt,
-                            AllowReturns = @AllowReturns,
-                            Liability = @Liability,
-                            AllowOnDepositInvoices = @AllowOnDepositInvoices,
-                            AllowOnFleetCard = @AllowOnFleetCard,
-                            DisplayTaxInPrice = @DisplayTaxInPrice
-                        WHERE ItemNum = @ItemNum";
-
-            using (SqlCommand cmd = new SqlCommand(updateQuery, sqlConn))
-            {
-                foreach (DataColumn col in newRow.Table.Columns)
-                {
-                    cmd.Parameters.AddWithValue("@" + col.ColumnName, newRow[col]);
-                }
-                int affectedRows = cmd.ExecuteNonQuery();
-                return affectedRows > 0;
-            }
-        }
-
-
-
-
+       
         private void InsertItem(SqlConnection sqlConn, DataRow row)
         {
-            string query = @"INSERT INTO dbo.products (
-                        ItemNum, ItemName, Price, NeverPrintInKitchen, ItemName_Extra, 
-                        Dept_ID, Cost, Retail_Price, In_Stock, Tax_1, Tax_2, Tax_3, 
-                        Tax_4, Tax_5, Tax_6, Vendor_Number, VendorName, Vendor_Part_Num, 
-                        AltSku, Location, AutoWeigh, FoodStampable, Check_ID, Prompt_Price, 
-                        Prompt_Quantity, Allow_BuyBack, Unit_Type, Unit_Size, 
-                        Prompt_Description, Check_ID2, Count_This_Item, Print_On_Receipt, 
-                        AllowReturns, Liability, AllowOnDepositInvoices, AllowOnFleetCard, 
-                        DisplayTaxInPrice)
-                    VALUES (
-                        @ItemNum, @ItemName, @Price, @NeverPrintInKitchen, @ItemName_Extra, 
-                        @Dept_ID, @Cost, @Retail_Price, @In_Stock, @Tax_1, @Tax_2, @Tax_3, 
-                        @Tax_4, @Tax_5, @Tax_6, @Vendor_Number, @VendorName, @Vendor_Part_Num, 
-                        @AltSku, @Location, @AutoWeigh, @FoodStampable, @Check_ID, @Prompt_Price, 
-                        @Prompt_Quantity, @Allow_BuyBack, @Unit_Type, @Unit_Size, 
-                        @Prompt_Description, @Check_ID2, @Count_This_Item, @Print_On_Receipt, 
-                        @AllowReturns, @Liability, @AllowOnDepositInvoices, @AllowOnFleetCard, 
-                        @DisplayTaxInPrice)";
+            StringBuilder insertQuery = new StringBuilder("INSERT INTO dbo.products (");
+            StringBuilder valuesQuery = new StringBuilder("VALUES (");
+            List<SqlParameter> parameters = new List<SqlParameter>();
 
-            using (SqlCommand cmd = new SqlCommand(query, sqlConn))
+            foreach (DataColumn col in row.Table.Columns)
             {
-                foreach (DataColumn col in row.Table.Columns)
-                {
-                    cmd.Parameters.AddWithValue("@" + col.ColumnName, row[col]);
-                }
+                insertQuery.Append(col.ColumnName + ", ");
+                valuesQuery.Append($"@{col.ColumnName}, ");
+                parameters.Add(new SqlParameter($"@{col.ColumnName}", row[col.ColumnName] ?? DBNull.Value));
+            }
+
+            insertQuery.Length -= 2;
+            valuesQuery.Length -= 2;
+            insertQuery.Append(") ");
+            valuesQuery.Append(")");
+
+            using (SqlCommand cmd = new SqlCommand(insertQuery.ToString() + valuesQuery.ToString(), sqlConn))
+            {
+                cmd.Parameters.AddRange(parameters.ToArray());
                 cmd.ExecuteNonQuery();
             }
         }
-
-        private DataRow CreateSummaryDataRow(DataRow row, string status)
+                private DataRow CreateSummaryDataRow(DataRow row, string status)
         {
             DataTable table = row.Table.Clone();
-            table.Columns.Add("Status", typeof(string)); // Ensure the Status column is added to the table schema
+            table.Columns.Add("Status", typeof(string));
 
             DataRow summaryRow = table.NewRow();
             summaryRow["ItemNum"] = row["ItemNum"];
-            summaryRow["ItemName"] = row["ItemName"];
-            summaryRow["ItemName_Extra"] = row["ItemName_Extra"];
+            summaryRow["ItemName"] = row["ItemName"]; // Ensure column exists
+            summaryRow["ItemName_Extra"] = row["ItemName_Extra"]; // Ensure column exists
             summaryRow["Status"] = status;
             return summaryRow;
         }
@@ -240,7 +212,7 @@ namespace SQL_Export_Import
                 {
                     string csvFilePath = sfd.FileName;
                     string connectionString = "Server=localhost\\SQLEXPRESS;Database=FOSTER_DB;User Id=FOSTER;Password=Foster1;";
-                    string query = "SELECT * FROM dbo.products"; // Replace 'products' with your actual table name
+                    string query = "SELECT * FROM dbo.products";
 
                     try
                     {
@@ -252,14 +224,12 @@ namespace SQL_Export_Import
                             using (StreamWriter writer = new StreamWriter(csvFilePath))
                             using (CsvWriter csvWriter = new CsvWriter(writer, new CsvConfiguration(System.Globalization.CultureInfo.InvariantCulture) { HasHeaderRecord = true }))
                             {
-                                // Write header
                                 for (int i = 0; i < reader.FieldCount; i++)
                                 {
                                     csvWriter.WriteField(reader.GetName(i));
                                 }
                                 csvWriter.NextRecord();
 
-                                // Write data
                                 while (reader.Read())
                                 {
                                     for (int i = 0; i < reader.FieldCount; i++)
@@ -270,7 +240,6 @@ namespace SQL_Export_Import
                                 }
                             }
                         }
-
                         MessageBox.Show("Data exported successfully!");
                     }
                     catch (Exception ex)
@@ -289,7 +258,7 @@ namespace SQL_Export_Import
         private void LoadDataFromSQL()
         {
             string connectionString = "Server=localhost\\SQLEXPRESS;Database=FOSTER_DB;User Id=FOSTER;Password=Foster1;";
-            string query = "SELECT * FROM dbo.products"; // Replace 'products' with your actual table name
+            string query = "SELECT * FROM dbo.products";
 
             using (SqlConnection sqlConn = new SqlConnection(connectionString))
             using (SqlDataAdapter sqlDataAdapter = new SqlDataAdapter(query, sqlConn))
