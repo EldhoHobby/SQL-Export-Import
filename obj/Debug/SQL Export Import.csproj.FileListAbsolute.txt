@@ -102,3 +102,4 @@ C:\Users\eldho\source\repos\SQL Export Import\obj\Debug\SQL Expo.74BD8E81.Up2Dat
 C:\Users\eldho\source\repos\SQL Export Import\obj\Debug\SQL Export Import.exe
 C:\Users\eldho\source\repos\SQL Export Import\obj\Debug\SQL Export Import.pdb
 C:\Users\eldho\source\repos\SQL Export Import\bin\Debug\SQL Export Import.pdb
+C:\Users\eldho\source\repos\SQL Export Import\obj\Debug\SQL_Export_Import.ImportSummaryForm.resources
