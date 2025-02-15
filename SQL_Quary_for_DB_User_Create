@@ -1,0 +1,69 @@
+-- Step 1: Create the database
+CREATE DATABASE FOSTER_DB;
+GO
+
+-- Step 2: Switch to the new database
+USE FOSTER_DB;
+GO
+
+-- Step 3: Create the products table
+CREATE TABLE dbo.products (
+    ItemNum BIGINT PRIMARY KEY,
+    ItemName NVARCHAR(255),
+    Price DECIMAL(18, 4),
+    NeverPrintInKitchen BIT,
+    ItemName_Extra NVARCHAR(255),
+    Dept_ID INT,
+    Cost DECIMAL(18, 4),
+    Retail_Price DECIMAL(18, 4),
+    In_Stock INT,
+    Tax_1 BIT,
+    Tax_2 BIT,
+    Tax_3 BIT,
+    Tax_4 BIT,
+    Tax_5 BIT,
+    Tax_6 BIT,
+    Vendor_Number NVARCHAR(255),
+    VendorName NVARCHAR(255),
+    Vendor_Part_Num NVARCHAR(255),
+    AltSku NVARCHAR(255),
+    Location NVARCHAR(255),
+    AutoWeigh BIT,
+    FoodStampable BIT,
+    Check_ID BIT,
+    Prompt_Price BIT,
+    Prompt_Quantity BIT,
+    Allow_BuyBack BIT,
+    Unit_Type NVARCHAR(255),
+    Unit_Size NVARCHAR(255),
+    Prompt_Description NVARCHAR(255),
+    Check_ID2 BIT,
+    Count_This_Item BIT,
+    Print_On_Receipt BIT,
+    AllowReturns BIT,
+    Liability BIT,
+    AllowOnDepositInvoices BIT,
+    AllowOnFleetCard BIT,
+    DisplayTaxInPrice BIT
+);
+GO
+
+-- Step 4: Create a login for the user FOSTER (if it does not already exist)
+IF NOT EXISTS (SELECT * FROM sys.server_principals WHERE name = 'FOSTER')
+BEGIN
+    CREATE LOGIN FOSTER 
+    WITH PASSWORD = 'Foster1'; -- Replace with a secure password
+END;
+GO
+
+-- Step 5: Create a user in the database FOSTER_DB for the login FOSTER
+IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = 'FOSTER')
+BEGIN
+    CREATE USER FOSTER 
+    FOR LOGIN FOSTER;
+END;
+GO
+
+-- Step 6: Grant the user FOSTER full access to the database
+ALTER ROLE db_owner ADD MEMBER FOSTER;
+GO
