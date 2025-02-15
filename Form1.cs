@@ -57,7 +57,7 @@ namespace SQL_Export_Import
 
                             if (ItemExists(sqlConn, itemNum))
                             {
-                                if (UpdateItem(sqlConn, row))
+                                if (UpdateItem(sqlConn, row, out Dictionary<string, string> differences))
                                 {
                                     updated++;
                                     summaryData.Add(CreateSummaryDataRow(row, "Updated"));
@@ -97,57 +97,96 @@ namespace SQL_Export_Import
             }
         }
 
-        private bool UpdateItem(SqlConnection sqlConn, DataRow row)
+        private bool UpdateItem(SqlConnection sqlConn, DataRow newRow, out Dictionary<string, string> differences)
         {
-            string query = @"UPDATE dbo.products SET 
-                        ItemName = @ItemName,
-                        Price = @Price,
-                        NeverPrintInKitchen = @NeverPrintInKitchen,
-                        ItemName_Extra = @ItemName_Extra,
-                        Dept_ID = @Dept_ID,
-                        Cost = @Cost,
-                        Retail_Price = @Retail_Price,
-                        In_Stock = @In_Stock,
-                        Tax_1 = @Tax_1,
-                        Tax_2 = @Tax_2,
-                        Tax_3 = @Tax_3,
-                        Tax_4 = @Tax_4,
-                        Tax_5 = @Tax_5,
-                        Tax_6 = @Tax_6,
-                        Vendor_Number = @Vendor_Number,
-                        VendorName = @VendorName,
-                        Vendor_Part_Num = @Vendor_Part_Num,
-                        AltSku = @AltSku,
-                        Location = @Location,
-                        AutoWeigh = @AutoWeigh,
-                        FoodStampable = @FoodStampable,
-                        Check_ID = @Check_ID,
-                        Prompt_Price = @Prompt_Price,
-                        Prompt_Quantity = @Prompt_Quantity,
-                        Allow_BuyBack = @Allow_BuyBack,
-                        Unit_Type = @Unit_Type,
-                        Unit_Size = @Unit_Size,
-                        Prompt_Description = @Prompt_Description,
-                        Check_ID2 = @Check_ID2,
-                        Count_This_Item = @Count_This_Item,
-                        Print_On_Receipt = @Print_On_Receipt,
-                        AllowReturns = @AllowReturns,
-                        Liability = @Liability,
-                        AllowOnDepositInvoices = @AllowOnDepositInvoices,
-                        AllowOnFleetCard = @AllowOnFleetCard,
-                        DisplayTaxInPrice = @DisplayTaxInPrice
-                    WHERE ItemNum = @ItemNum";
+            differences = new Dictionary<string, string>();
 
-            using (SqlCommand cmd = new SqlCommand(query, sqlConn))
+            // Query to select existing data for comparison
+            string selectQuery = "SELECT * FROM dbo.products WHERE ItemNum = @ItemNum";
+            SqlCommand selectCmd = new SqlCommand(selectQuery, sqlConn);
+            selectCmd.Parameters.AddWithValue("@ItemNum", newRow["ItemNum"]);
+            SqlDataAdapter adapter = new SqlDataAdapter(selectCmd);
+            DataTable existingData = new DataTable();
+            adapter.Fill(existingData);
+
+            // Check if there are any differences
+            bool isDifferent = false;
+            if (existingData.Rows.Count > 0)
             {
-                foreach (DataColumn col in row.Table.Columns)
+                DataRow existingRow = existingData.Rows[0];
+                foreach (DataColumn col in newRow.Table.Columns)
                 {
-                    cmd.Parameters.AddWithValue("@" + col.ColumnName, row[col]);
+                    // Normalize data for comparison
+                    string existingValue = existingRow[col.ColumnName].ToString().Trim().ToLower();
+                    string newValue = newRow[col.ColumnName].ToString().Trim().ToLower();
+
+                    if (!existingValue.Equals(newValue))
+                    {
+                        isDifferent = true;
+                        differences[col.ColumnName] = $"Old: {existingRow[col.ColumnName]}, New: {newRow[col.ColumnName]}";
+                    }
+                }
+            }
+
+            // If no differences, return false to indicate no update
+            if (!isDifferent)
+            {
+                return false;
+            }
+
+            // Update query if differences found
+            string updateQuery = @"UPDATE dbo.products SET 
+                            ItemName = @ItemName,
+                            Price = @Price,
+                            NeverPrintInKitchen = @NeverPrintInKitchen,
+                            ItemName_Extra = @ItemName_Extra,
+                            Dept_ID = @Dept_ID,
+                            Cost = @Cost,
+                            Retail_Price = @Retail_Price,
+                            In_Stock = @In_Stock,
+                            Tax_1 = @Tax_1,
+                            Tax_2 = @Tax_2,
+                            Tax_3 = @Tax_3,
+                            Tax_4 = @Tax_4,
+                            Tax_5 = @Tax_5,
+                            Tax_6 = @Tax_6,
+                            Vendor_Number = @Vendor_Number,
+                            VendorName = @VendorName,
+                            Vendor_Part_Num = @Vendor_Part_Num,
+                            AltSku = @AltSku,
+                            Location = @Location,
+                            AutoWeigh = @AutoWeigh,
+                            FoodStampable = @FoodStampable,
+                            Check_ID = @Check_ID,
+                            Prompt_Price = @Prompt_Price,
+                            Prompt_Quantity = @Prompt_Quantity,
+                            Allow_BuyBack = @Allow_BuyBack,
+                            Unit_Type = @Unit_Type,
+                            Unit_Size = @Unit_Size,
+                            Prompt_Description = @Prompt_Description,
+                            Check_ID2 = @Check_ID2,
+                            Count_This_Item = @Count_This_Item,
+                            Print_On_Receipt = @Print_On_Receipt,
+                            AllowReturns = @AllowReturns,
+                            Liability = @Liability,
+                            AllowOnDepositInvoices = @AllowOnDepositInvoices,
+                            AllowOnFleetCard = @AllowOnFleetCard,
+                            DisplayTaxInPrice = @DisplayTaxInPrice
+                        WHERE ItemNum = @ItemNum";
+
+            using (SqlCommand cmd = new SqlCommand(updateQuery, sqlConn))
+            {
+                foreach (DataColumn col in newRow.Table.Columns)
+                {
+                    cmd.Parameters.AddWithValue("@" + col.ColumnName, newRow[col]);
                 }
                 int affectedRows = cmd.ExecuteNonQuery();
                 return affectedRows > 0;
             }
         }
+
+
+
 
         private void InsertItem(SqlConnection sqlConn, DataRow row)
         {
@@ -182,7 +221,10 @@ namespace SQL_Export_Import
 
         private DataRow CreateSummaryDataRow(DataRow row, string status)
         {
-            DataRow summaryRow = row.Table.NewRow();
+            DataTable table = row.Table.Clone();
+            table.Columns.Add("Status", typeof(string)); // Ensure the Status column is added to the table schema
+
+            DataRow summaryRow = table.NewRow();
             summaryRow["ItemNum"] = row["ItemNum"];
             summaryRow["ItemName"] = row["ItemName"];
             summaryRow["ItemName_Extra"] = row["ItemName_Extra"];
